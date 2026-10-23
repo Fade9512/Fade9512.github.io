@@ -1,0 +1,88 @@
+const ICPC_STORAGE_KEY = 'icpc-guide-v1';
+const ICPC_STATUSES = ['未开始','学习中','已掌握','待复习'];
+const ICPC_PRIORITY_NAMES = {S:'核心',A:'常用进阶',B:'专题',C:'低频进阶'};
+const ICPC_BY_ID = new Map(ICPC_SKILLS.map(s=>[s.id,s]));
+const ICPC_CATEGORY_MAP = new Map(ICPC_CATEGORIES.map(c=>[c.name,c]));
+const ICPC_PREREQ_ALIASES = {DFS:'s032',BFS:'s033',Dijkstra:'s041',DSU:'s050','并查集':'s050',SCC:'s071',BIT:'s121','线段树':'s124','前缀和':'s008','双指针':'s013','差分':'s010','堆':'s002','优先队列':'s002','快速幂':'s151','位运算':'s210','叉积':'s193','点积':'s192','凸包':'s201'};
+let icpcProgress = {};
+let icpcFilter = {search:'',category:'all',priority:'all',status:'all',page:1,stage:null};
+const ICPC_PAGE_SIZE = 20;
+
+function icpcCleanProgress(value){
+ const clean={};
+ if(!value||typeof value!=='object'||Array.isArray(value))return clean;
+ for(const [id,row] of Object.entries(value)){
+  if(!ICPC_BY_ID.has(id)||!row||typeof row!=='object'||Array.isArray(row))continue;
+  clean[id]={status:ICPC_STATUSES.includes(row.status)?row.status:'未开始',done:Math.min(1000000,Math.max(0,Math.floor(Number(row.done)||0))),rating:Math.min(5,Math.max(0,Math.floor(Number(row.rating)||0))),note:typeof row.note==='string'?row.note.slice(0,4000):'',pinned:row.pinned===true};
+ }
+ return clean;
+}
+try{icpcProgress=icpcCleanProgress(JSON.parse(localStorage.getItem(ICPC_STORAGE_KEY)||'{}'));}catch{}
+function icpcRecord(id){return icpcProgress[id]||{status:'未开始',done:0,rating:0,note:'',pinned:false};}
+function icpcSave(){try{localStorage.setItem(ICPC_STORAGE_KEY,JSON.stringify(icpcProgress));}catch{toast('浏览器无法保存进度，请导出备份。');}}
+function icpcUpdate(id,patch){if(!ICPC_BY_ID.has(id))return;icpcProgress[id]=icpcCleanProgress({[id]:{...icpcRecord(id),...patch}})[id];icpcSave();}
+function icpcSummary(items=ICPC_SKILLS){return {total:items.length,mastered:items.filter(s=>icpcRecord(s.id).status==='已掌握').length,learning:items.filter(s=>icpcRecord(s.id).status==='学习中').length,review:items.filter(s=>icpcRecord(s.id).status==='待复习').length,done:items.reduce((n,s)=>n+icpcRecord(s.id).done,0),pinned:items.filter(s=>icpcRecord(s.id).pinned).length};}
+function icpcFilteredSkills(){
+ const text=icpcFilter.search.trim().toLowerCase();
+ const stage=ICPC_STAGES.find(s=>s.id===icpcFilter.stage);
+ return ICPC_SKILLS.filter(s=>(icpcFilter.category==='all'||s.category===icpcFilter.category)&&(icpcFilter.priority==='all'||s.priority===icpcFilter.priority)&&(icpcFilter.status==='all'||icpcRecord(s.id).status===icpcFilter.status)&&(!stage||stage.ids.includes(s.id))&&(!text||[s.name,s.category,s.standard,s.prerequisite].join(' ').toLowerCase().includes(text)));
+}
+function icpcToolbar(){return `<div class="icpc-actions"><button class="secondary" data-icpc-action="import">导入进度</button><button class="secondary" data-icpc-action="export">导出进度</button></div>`;}
+function icpcStats(){const n=icpcSummary();return `<div class="icpc-stats"><span>技能点 <b>${n.total}</b></span><span>已掌握 <b>${n.mastered}</b></span><span>学习中 <b>${n.learning}</b></span><span>待复习 <b>${n.review}</b></span><span>已做题 <b>${n.done}</b></span></div>`;}
+function icpcPage(route){return route==='icpc-route'?icpcRouteView():route==='icpc-progress'?icpcProgressView():icpcGuideView();}
+function icpcGuideView(){return `<section class="page-heading"><h1>ICPC 算法指南</h1>${icpcToolbar()}</section><div id="icpc-stats">${icpcStats()}</div><div class="icpc-filters"><div class="search-box">${icon('search')}<input id="icpc-search" type="search" aria-label="搜索算法" placeholder="知识点 / 前置知识 / 掌握标准" value="${escapeHtml(icpcFilter.search)}"></div><label class="sr-only" for="icpc-category">算法分类</label><select id="icpc-category"><option value="all">全部分类（26）</option>${ICPC_CATEGORIES.map(c=>`<option value="${escapeHtml(c.name)}" ${icpcFilter.category===c.name?'selected':''}>${c.name}</option>`).join('')}</select><label class="sr-only" for="icpc-priority">算法优先级</label><select id="icpc-priority"><option value="all">全部优先级</option>${Object.entries(ICPC_PRIORITY_NAMES).map(([v,n])=>`<option value="${v}" ${icpcFilter.priority===v?'selected':''}>${v} · ${n}</option>`).join('')}</select><label class="sr-only" for="icpc-status">学习状态</label><select id="icpc-status"><option value="all">全部状态</option>${ICPC_STATUSES.map(s=>`<option ${icpcFilter.status===s?'selected':''}>${s}</option>`).join('')}</select><button class="text-button" data-icpc-action="reset-filters">重置</button></div><div id="icpc-results">${icpcResultsView()}</div>`;}
+function icpcResultsView(){
+ const all=icpcFilteredSkills(),pages=Math.max(1,Math.ceil(all.length/ICPC_PAGE_SIZE));
+ icpcFilter.page=Math.min(pages,Math.max(1,icpcFilter.page));
+ const list=all.slice((icpcFilter.page-1)*ICPC_PAGE_SIZE,icpcFilter.page*ICPC_PAGE_SIZE),stage=ICPC_STAGES.find(s=>s.id===icpcFilter.stage);
+ return `<div class="icpc-result-line"><span>${all.length} 个知识点${stage?' · 当前阶段：'+stage.name:''}</span>${stage?'<button class="text-button" data-icpc-action="clear-stage">显示全部阶段</button>':''}<span class="icpc-legend">S 核心 · A 常用进阶 · B 专题 · C 低频进阶</span></div>${list.length?`<div class="icpc-table-wrap" tabindex="0" role="region" aria-label="ICPC 知识点列表"><table class="icpc-table"><thead><tr><th scope="col">知识点</th><th scope="col">优先级</th><th scope="col">前置知识</th><th scope="col">掌握标准</th><th scope="col">建议题量</th><th scope="col">学习状态</th></tr></thead><tbody>${list.map(s=>`<tr><td><button class="skill-link" data-icpc-detail="${s.id}">${s.name}</button><small>${s.category}${icpcRecord(s.id).pinned?' · 已加入计划':''}</small></td><td><span class="icpc-priority priority-${s.priority}">${s.priority}</span></td><td>${escapeHtml(s.prerequisite)}</td><td>${escapeHtml(s.standard)}</td><td>${s.practiceTarget} 题</td><td><select class="skill-status" data-icpc-status="${s.id}" aria-label="${escapeHtml(s.name)}的学习状态">${ICPC_STATUSES.map(v=>`<option ${icpcRecord(s.id).status===v?'selected':''}>${v}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div><div class="icpc-pagination"><span>第 ${icpcFilter.page} / ${pages} 页，每页 ${ICPC_PAGE_SIZE} 项</span><button class="secondary" data-icpc-page="${icpcFilter.page-1}" ${icpcFilter.page===1?'disabled':''}>上一页</button><button class="secondary" data-icpc-page="${icpcFilter.page+1}" ${icpcFilter.page===pages?'disabled':''}>下一页</button></div>`:`<div class="panel no-results"><h3>没有匹配的知识点</h3><p>调整分类、优先级、状态或搜索词。</p><button class="secondary" data-icpc-action="reset-filters">清除筛选</button></div>`}`;
+}
+function icpcRefresh(){
+ if(currentRoute()==='icpc'){$('#icpc-results').innerHTML=icpcResultsView();$('#icpc-stats').innerHTML=icpcStats();}
+ else if(currentRoute().startsWith('icpc'))render();
+}
+function icpcRouteView(){return `<section class="page-heading"><h1>ICPC 学习路线</h1><a href="#icpc" class="secondary">全部知识点</a></section><p class="icpc-page-note">按前置关系组织的主线；每个知识点以能解释、独立实现和做题检验为目标。</p><div class="icpc-stages">${ICPC_STAGES.map((stage,i)=>{const skills=stage.ids.map(id=>ICPC_BY_ID.get(id)),n=icpcSummary(skills);return `<section class="panel icpc-stage"><div class="stage-heading"><h2>${i+1}. ${stage.name}</h2><span>${n.mastered} / ${n.total} 已掌握</span><button class="secondary" data-icpc-stage="${stage.id}">查看本阶段</button></div><p>${stage.goal}</p><div class="stage-topics">${skills.map(s=>`<button data-icpc-detail="${s.id}" class="stage-topic ${icpcRecord(s.id).status==='已掌握'?'is-done':''}">${s.name}${icpcRecord(s.id).status==='已掌握'?' ✓':''}</button>`).join('')}</div></section>`;}).join('')}</div>`;}
+function icpcSkillList(items,empty){return items.length?`<ul class="icpc-compact-list">${items.map(s=>`<li><button class="skill-link" data-icpc-detail="${s.id}">${s.name}</button><span>${s.category} · ${icpcRecord(s.id).status}</span></li>`).join('')}</ul>`:`<p class="icpc-empty">${empty}</p>`;}
+function icpcProgressView(){
+ const n=icpcSummary();
+ return `<section class="page-heading"><h1>ICPC 学习进度</h1>${icpcToolbar()}</section>${icpcStats()}<div class="icpc-progress-grid"><section class="panel icpc-progress-panel"><h2>优先级</h2><table class="simple-table"><thead><tr><th>级别</th><th>已掌握 / 总数</th><th>掌握率</th></tr></thead><tbody>${Object.entries(ICPC_PRIORITY_NAMES).map(([p,label])=>{const a=icpcSummary(ICPC_SKILLS.filter(s=>s.priority===p));return `<tr><td>${p} · ${label}</td><td>${a.mastered} / ${a.total}</td><td>${Math.round(100*a.mastered/a.total)}%</td></tr>`;}).join('')}</tbody></table></section><section class="panel icpc-progress-panel"><h2>学习计划 <small>${n.pinned}</small></h2>${icpcSkillList(ICPC_SKILLS.filter(s=>icpcRecord(s.id).pinned),'在知识点详情中点击“加入计划”。')}</section><section class="panel icpc-progress-panel"><h2>学习中与待复习</h2>${icpcSkillList(ICPC_SKILLS.filter(s=>['学习中','待复习'].includes(icpcRecord(s.id).status)),'在列表或详情中设置学习状态。')}</section><section class="panel icpc-progress-panel"><h2>分类进度</h2><div class="icpc-category-progress">${ICPC_CATEGORIES.map(c=>{const a=icpcSummary(ICPC_SKILLS.filter(s=>s.category===c.name));return `<div><button class="skill-link" data-icpc-category-link="${c.name}">${c.name}</button><progress value="${a.mastered}" max="${a.total}" aria-label="${c.name}掌握进度"></progress><span>${a.mastered}/${a.total}</span></div>`;}).join('')}</div></section></div><p class="icpc-page-note">已做题数与掌握状态分别记录。进度保存在当前浏览器，可导出备份或导入到其他设备。</p>`;
+}
+function icpcPrereqs(s){const ids=[...new Set(s.prerequisite.split(/[+／/、\s]+/).map(x=>ICPC_PREREQ_ALIASES[x]).filter(id=>id&&id!==s.id))];return ids.map(id=>ICPC_BY_ID.get(id));}
+function icpcOpen(id){if(!ICPC_BY_ID.has(id))return;lastFocus=document.activeElement;currentModal={type:'icpc-skill',id};icpcRenderModal(id);if(!modal.open)modal.showModal();modal.scrollTop=0;}
+function icpcRenderModal(id){
+ const s=ICPC_BY_ID.get(id),r=icpcRecord(id),c=ICPC_CATEGORY_MAP.get(s.category),pre=icpcPrereqs(s);
+ $('#modal-body').innerHTML=`${modalHeader('',s.name,s.category+' · '+s.priority+' '+ICPC_PRIORITY_NAMES[s.priority])}<div class="modal-content"><section class="modal-section"><h3>掌握标准</h3><p>${escapeHtml(s.standard)}</p></section><section class="modal-section"><h3>前置知识</h3><p>${escapeHtml(s.prerequisite)}</p>${pre.length?`<div class="icpc-prereq-links">${pre.map(x=>`<button class="text-button" data-icpc-detail="${x.id}">${x.name} ↗</button>`).join('')}</div>`:''}</section><section class="modal-section"><h3>${s.core?'核心思路':'学习方法'}</h3><p>${escapeHtml(s.core||c.method)}</p>${s.complexity?`<p class="icpc-complexity">复杂度：${s.complexity}</p>`:''}</section><section class="modal-section"><h3>易错点</h3><p>${escapeHtml(s.pitfall||c.pitfall)}</p></section>${s.code?`<details class="icpc-code"><summary>GNU++17 参考实现</summary><div class="icpc-code-bar"><span>函数片段，配合题目输入调用</span><button class="text-button" data-icpc-copy="${id}">复制代码</button></div><pre><code>${escapeHtml('#include <bits/stdc++.h>\nusing namespace std;\n\n'+s.code)}</code></pre></details>`:''}<section class="modal-section"><h3>练习方向 <small>原清单建议 ${s.practiceTarget} 题</small></h3><p>${escapeHtml(s.practice||c.method)} 验收：${escapeHtml(s.standard)}。</p>${s.problem?`<a class="icpc-practice-link" href="${s.problem.url}" target="_blank" rel="noopener noreferrer">CSES · ${s.problem.title} ↗</a>`:`<a class="icpc-practice-link" href="https://cses.fi/problemset/" target="_blank" rel="noopener noreferrer">按本知识点选择 CSES 题目 ↗</a>`}</section><section class="modal-section"><h3>学习资料</h3><div class="source-links"><a href="${s.article||c.resource}" target="_blank" rel="noopener noreferrer"><span>${s.article?(s.article.includes('atcoder')?'AtCoder Library 文档':s.article.includes('cses.fi/book')?'Competitive Programmer’s Handbook':'CP-Algorithms 专题'):'OI Wiki · '+s.category}</span><span>↗</span></a><a href="https://oi-wiki.org/" target="_blank" rel="noopener noreferrer"><span>OI Wiki 目录与搜索</span><span>↗</span></a></div></section><section class="icpc-record"><h3>我的记录</h3><div class="icpc-record-grid"><label>学习状态<select id="icpc-edit-status">${ICPC_STATUSES.map(v=>`<option ${r.status===v?'selected':''}>${v}</option>`).join('')}</select></label><label>已做题数<input id="icpc-edit-done" type="number" min="0" max="1000000" step="1" value="${r.done}"></label><label>自评（0–5）<select id="icpc-edit-rating">${[0,1,2,3,4,5].map(v=>`<option ${r.rating===v?'selected':''}>${v}</option>`).join('')}</select></label></div><label class="icpc-note-label" for="icpc-edit-note">备注</label><textarea id="icpc-edit-note" rows="3" maxlength="4000" placeholder="题号、错因、待复习内容">${escapeHtml(r.note)}</textarea><div class="modal-actions"><button class="secondary" data-icpc-pin="${id}" aria-pressed="${r.pinned}">${r.pinned?'移出计划':'加入计划'}</button><button class="primary" data-icpc-save="${id}">保存记录</button></div></section></div>`;
+}
+function icpcReadForm(id){const status=$('#icpc-edit-status');return status?{status:status.value,done:$('#icpc-edit-done').value,rating:$('#icpc-edit-rating').value,note:$('#icpc-edit-note').value}:{...icpcRecord(id)};}
+function icpcExport(){const file={app:'icpc-guide',version:1,exportedAt:new Date().toISOString(),progress:icpcProgress};const url=URL.createObjectURL(new Blob([JSON.stringify(file,null,2)],{type:'application/json;charset=utf-8'}));const link=document.createElement('a');link.href=url;link.download='ICPC_学习进度.json';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),5000);}
+function icpcParseImport(data){if(!data||data.app!=='icpc-guide'||data.version!==1||!data.progress||typeof data.progress!=='object'||Array.isArray(data.progress))throw new Error('文件格式不匹配，请选择本工具导出的 JSON 进度文件。');const clean=icpcCleanProgress(data.progress);if(Object.keys(data.progress).length&&!Object.keys(clean).length)throw new Error('没有找到可识别的知识点记录。');return clean;}
+async function icpcImport(file){if(!file)return;if(file.size>1024*1024){toast('文件过大，请使用小于 1 MB 的进度 JSON。');return;}try{const clean=icpcParseImport(JSON.parse(await file.text()));icpcProgress={...icpcProgress,...clean};icpcSave();if(currentRoute().startsWith('icpc'))render();toast('已导入 '+Object.keys(clean).length+' 条记录。');}catch(e){toast(e instanceof SyntaxError?'文件不是有效 JSON。':e.message||'导入失败。');}}
+function icpcHelp(){return `${modalHeader('','ICPC 使用说明','')}<div class="modal-content"><section class="modal-section"><ol><li>按分类、优先级或关键字查找知识点。</li><li>打开详情查看掌握标准、前置、学习方法和练习入口；部分基础技能提供 C++ 参考代码。</li><li>在列表修改状态，或在详情记录题数、自评和备注。</li><li>加入计划后，可在“学习进度”中集中查看。用 JSON 导出、导入进行备份。</li></ol></section><section class="modal-section"><h3>数据与保存</h3><p>228 个技能点及分级、标准、前置、建议题量来自上传清单。“学习路线”和补充讲解为另外整理。建议题量为练习参考；进度仅保存在当前浏览器。</p><p>侧边栏的“数模罗盘”保留原有选型、图鉴、比较和学习路线。</p></section><div class="modal-actions"><button class="primary" data-action="close">关闭</button></div></div>`;}
+function icpcSources(){return `${modalHeader('','ICPC 资料来源','知识点清单来自上传表格；讲解与练习另行整理。')}<div class="modal-content"><div class="source-links"><a href="https://oi-wiki.org/" target="_blank" rel="noopener noreferrer"><span>OI Wiki · 中文算法资料</span><span>↗</span></a><a href="https://cp-algorithms.com/" target="_blank" rel="noopener noreferrer"><span>CP-Algorithms · 思路与复杂度</span><span>↗</span></a><a href="https://atcoder.github.io/ac-library/production/document_en/index.html" target="_blank" rel="noopener noreferrer"><span>AtCoder Library · 算法库文档</span><span>↗</span></a><a href="https://cses.fi/problemset/" target="_blank" rel="noopener noreferrer"><span>CSES · 官方练习题</span><span>↗</span></a></div></div>`;}
+
+document.addEventListener('click',event=>{
+ const b=event.target.closest('button');if(!b)return;
+ if(b.dataset.icpcDetail){icpcOpen(b.dataset.icpcDetail);return;}
+ if(b.dataset.icpcStatus)return;
+ if(b.dataset.icpcPage){icpcFilter.page=Number(b.dataset.icpcPage);icpcRefresh();$('#icpc-results').scrollIntoView({block:'start'});return;}
+ if(b.dataset.icpcStage){icpcFilter={search:'',category:'all',priority:'all',status:'all',page:1,stage:b.dataset.icpcStage};location.hash='#icpc';render();return;}
+ if(b.dataset.icpcCategoryLink){icpcFilter={search:'',category:b.dataset.icpcCategoryLink,priority:'all',status:'all',page:1,stage:null};location.hash='#icpc';render();return;}
+ if(b.dataset.icpcSave){icpcUpdate(b.dataset.icpcSave,icpcReadForm(b.dataset.icpcSave));icpcRefresh();toast('记录已保存。');return;}
+ if(b.dataset.icpcPin){const id=b.dataset.icpcPin;icpcUpdate(id,{...icpcReadForm(id),pinned:!icpcRecord(id).pinned});b.textContent=icpcRecord(id).pinned?'移出计划':'加入计划';b.setAttribute('aria-pressed',icpcRecord(id).pinned);icpcRefresh();return;}
+ if(b.dataset.icpcCopy){const s=ICPC_BY_ID.get(b.dataset.icpcCopy);if(!s?.code)return;const text='#include <bits/stdc++.h>\nusing namespace std;\n\n'+s.code;const copy=navigator.clipboard?.writeText(text);if(copy)copy.then(()=>toast('代码已复制。')).catch(()=>toast('无法访问剪贴板，可直接选择代码复制。'));else toast('请直接选择代码复制。');return;}
+ switch(b.dataset.icpcAction){
+  case 'reset-filters':icpcFilter={search:'',category:'all',priority:'all',status:'all',page:1,stage:null};render();break;
+  case 'clear-stage':icpcFilter.stage=null;icpcFilter.page=1;icpcRefresh();break;
+  case 'export':icpcExport();break;
+  case 'import':$('#icpc-import-file').click();break;
+ }
+});
+document.addEventListener('input',event=>{if(event.target.id==='icpc-search'){icpcFilter.search=event.target.value;icpcFilter.page=1;icpcRefresh();}});
+document.addEventListener('change',event=>{
+ const e=event.target;
+ if(e.id==='icpc-category'){icpcFilter.category=e.value;icpcFilter.page=1;icpcRefresh();}
+ if(e.id==='icpc-priority'){icpcFilter.priority=e.value;icpcFilter.page=1;icpcRefresh();}
+ if(e.id==='icpc-status'){icpcFilter.status=e.value;icpcFilter.page=1;icpcRefresh();}
+ if(e.dataset.icpcStatus){icpcUpdate(e.dataset.icpcStatus,{status:e.value});icpcRefresh();}
+ if(e.id==='icpc-import-file'){const file=e.files?.[0];e.value='';icpcImport(file);}
+});

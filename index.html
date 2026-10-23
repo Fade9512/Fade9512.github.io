@@ -2,14 +2,19 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="description" content="面向大一数模队伍的模型选型工作台。根据问题目标与数据特征，探索模型、比较方案、安排学习与练习。">
-  <meta name="theme-color" content="#1c5546"><title>模型罗盘 · 数模选型助手</title>
+  <meta name="description" content="ICPC 算法指南与数模罗盘。浏览算法知识点、前置与学习路线，记录练习进度，比较数学建模方案。">
+  <meta name="theme-color" content="#1c5546"><title>ICPC 与数模 · 竞赛指南</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <aside class="sidebar">
-    <a href="#assistant" class="brand" aria-label="模型罗盘首页"><strong>模型罗盘</strong></a>
+    <a href="#icpc" class="brand" aria-label="竞赛指南首页"><strong>竞赛指南</strong></a>
     <nav aria-label="主导航">
+      <div class="nav-group-label">ICPC 算法</div>
+      <a href="#icpc" data-nav="icpc">算法指南 <span class="nav-count">228</span></a>
+      <a href="#icpc-route" data-nav="icpc-route">学习路线</a>
+      <a href="#icpc-progress" data-nav="icpc-progress">学习进度</a>
+      <div class="nav-group-label">数模罗盘</div>
       <a href="#assistant" data-nav="assistant">模型选型</a>
       <a href="#library" data-nav="library">模型图鉴 <span class="nav-count">14</span></a>
       <a href="#compare" data-nav="compare">方案比较 <span class="nav-count" id="compare-count">0</span></a>
@@ -24,6 +29,8 @@
   <div id="compare-tray"></div>
   <dialog id="modal" aria-labelledby="modal-title"><div id="modal-body"></div></dialog>
   <div id="toast" role="status" aria-live="polite"></div>
-  <script src="data.js"></script><script src="app.js"></script>
+  <input id="icpc-import-file" type="file" accept=".json,application/json" hidden>
+  <script src="data.js"></script><script src="icpc-data.js"></script><script src="icpc.js"></script><script src="app.js"></script>
 </body>
 </html>
+
